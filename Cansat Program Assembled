@@ -1,0 +1,100 @@
+/*
+  MPU6050 + BME280 (sederhana)
+  - MPU6050 I2C addr 0x68: baca accelerometer (X,Y,Z)
+  - BME280 I2C addr 0x76: baca temperature (°C), humidity (%), pressure (hPa)
+  - Output: baris manusiawi + baris numerik untuk Serial Plotter
+  - Pastikan library Adafruit_BME280 dan Adafruit_Sensor terpasang
+*/
+
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+
+const uint8_t MPU_ADDR = 0x68;       // MPU6050 address
+const uint8_t ACCEL_XOUT_H = 0x3B;
+
+Adafruit_BME280 bme;                  // objek BME280
+const uint8_t BME_ADDR = 0x76;       // BME280 address sesuai permintaan
+
+bool bmeFound = false;
+
+void setup() {
+  Wire.begin();
+  Serial.begin(9600);
+  delay(100);
+
+  // Bangunkan MPU6050
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x6B);   // PWR_MGMT_1
+  Wire.write(0x00);   // normal mode
+  Wire.endTransmission();
+  delay(50);
+
+  // Inisialisasi BME280
+  if (bme.begin(BME_ADDR)) {
+    bmeFound = true;
+    Serial.println("BME280 ditemukan di alamat 0x76");
+  } else {
+    bmeFound = false;
+    Serial.println("BME280 TIDAK ditemukan di 0x76 (cek wiring / alamat / library).");
+  }
+
+  Serial.println("MPU6050 + BME280 simple (MPU:0x68, BME:0x76)");
+  Serial.println("Human: X: raw (g) | Y: raw (g) | Z: raw (g) | T:°C P:hPa H:%");
+  Serial.println("Plot: ax_g ay_g az_g temp_C hum_pct pres_hPa   <-- numeric line untuk Serial Plotter");
+}
+
+void loop() {
+  // ---- MPU6050 accel ----
+  int16_t ax = 0, ay = 0, az = 0;
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(ACCEL_XOUT_H);
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU_ADDR, (uint8_t)6);
+  if (Wire.available() >= 6) {
+    uint8_t hi, lo;
+    hi = Wire.read(); lo = Wire.read(); ax = (int16_t)((hi << 8) | lo);
+    hi = Wire.read(); lo = Wire.read(); ay = (int16_t)((hi << 8) | lo);
+    hi = Wire.read(); lo = Wire.read(); az = (int16_t)((hi << 8) | lo);
+  } else {
+    ax = ay = az = 0;
+  }
+  float ax_g = ax / 16384.0;
+  float ay_g = ay / 16384.0;
+  float az_g = az / 16384.0;
+
+  // ---- BME280 ----
+  float tempC = 0.0;
+  float hum = 0.0;
+  float pres_hPa = 0.0;
+  if (bmeFound) {
+    tempC = bme.readTemperature();          // °C
+    hum = bme.readHumidity();               // %
+    pres_hPa = bme.readPressure() / 100.0;  // Pa -> hPa
+  } else {
+    // jika BME tidak terdeteksi, tetap kirim nol supaya format output konsisten
+    tempC = 0.0; hum = 0.0; pres_hPa = 0.0;
+  }
+
+  // ----- Output manusiawi -----
+  Serial.print("X: ");
+  Serial.print(ax); Serial.print(" ("); Serial.print(ax_g, 3); Serial.print(" g)");
+  Serial.print("  |  Y: ");
+  Serial.print(ay); Serial.print(" ("); Serial.print(ay_g, 3); Serial.print(" g)");
+  Serial.print("  |  Z: ");
+  Serial.print(az); Serial.print(" ("); Serial.print(az_g, 3); Serial.print(" g)");
+  Serial.print("  |  T: "); Serial.print(tempC, 2); Serial.print(" C");
+  Serial.print("  P: "); Serial.print(pres_hPa, 1); Serial.print(" hPa");
+  Serial.print("  H: "); Serial.print(hum, 1); Serial.println(" %");
+
+  // ----- Baris numerik untuk Serial Plotter (space-separated) -----
+  // urutan: ax_g ay_g az_g temp_C hum_pct pres_hPa
+  Serial.print(ax_g, 4); Serial.print(' ');
+  Serial.print(ay_g, 4); Serial.print(' ');
+  Serial.print(az_g, 4); Serial.print(' ');
+  Serial.print(tempC, 2); Serial.print(' ');
+  Serial.print(hum, 2); Serial.print(' ');
+  Serial.println(pres_hPa, 2);
+
+  delay(200); // ~5 Hz; ubah sesuai kebutuhan
+}
